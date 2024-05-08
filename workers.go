@@ -96,8 +96,8 @@ func sortTask(wg *sync.WaitGroup, inCh <-chan *Task, doneOutCh chan<- *Task, und
 func main() {
 	tasksCh := initTaskGenerator()
 	processedTasksCh := make(chan *Task, TaskChannelBuffer)
-	doneTasksCh := make(chan *Task)
-	undoneTasksCh := make(chan error)
+	doneTasksCh := make(chan *Task, TaskChannelBuffer)
+	undoneTasksCh := make(chan error, TaskChannelBuffer)
 
 	taskHandlersWg := &sync.WaitGroup{}
 	taskSortersWg := &sync.WaitGroup{}
