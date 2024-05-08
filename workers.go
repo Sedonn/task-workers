@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -17,7 +18,7 @@ type Task struct {
 	id         int
 	createTime time.Time
 	finishTime time.Time
-	err        string
+	err        error
 	result     *TaskResult
 }
 
@@ -33,16 +34,14 @@ type TaskResult struct {
 
 type TaskUnknownError Task
 
-func (e TaskUnknownError) Error() string {
-	task := Task(e)
-	return fmt.Sprintf("Task unknown error!\nid: %v\nerror: %v\n", task.id, task.err)
+func (e *TaskUnknownError) Error() string {
+	return fmt.Sprintf("Task unknown error!\nid: %v\nerror: %v\n", e.id, e.err)
 }
 
 type TaskHandleError Task
 
-func (e TaskHandleError) Error() string {
-	task := Task(e)
-	return fmt.Sprintf("Task process error!\nid: %d\ntime: %s\nerror %s\n", task.id, task.createTime.Format(time.RFC3339), task.err)
+func (e *TaskHandleError) Error() string {
+	return fmt.Sprintf("Task process error!\nid: %d\ntime: %s\nerror %s\n", e.id, e.createTime.Format(time.RFC3339), e.err)
 }
 
 func initTaskGenerator() <-chan *Task {
@@ -50,9 +49,9 @@ func initTaskGenerator() <-chan *Task {
 
 	go func() {
 		for count := 0; count < TaskCount; count++ {
-			err := ""
+			var err error
 			if time.Now().Nanosecond()%2 > 0 {
-				err = "Some error occurred"
+				err = errors.New("Some error occurred")
 			}
 			tasksCh <- &Task{id: int(time.Now().Unix()) + count, createTime: time.Now(), err: err}
 		}
@@ -66,7 +65,7 @@ func handleTask(wg *sync.WaitGroup, inCh <-chan *Task, outCh chan<- *Task) {
 	defer wg.Done()
 
 	for task := range inCh {
-		if task.createTime.After(time.Now().Add(-20*time.Second)) || task.err != "" {
+		if task.createTime.After(time.Now().Add(-20*time.Second)) || task.err != nil {
 			task.result = &TaskResult{true, []byte("Task has been completed!")}
 		} else {
 			task.result = &TaskResult{false, []byte("Something went wrong!")}
@@ -84,12 +83,12 @@ func sortTask(wg *sync.WaitGroup, inCh <-chan *Task, doneOutCh chan<- *Task, und
 
 	for task := range inCh {
 		switch {
-		case task.err != "":
-			undoneOutCh <- TaskUnknownError(*task)
+		case task.err != nil:
+			undoneOutCh <- (*TaskUnknownError)(task)
 		case task.result.done:
 			doneOutCh <- task
 		case !task.result.done:
-			undoneOutCh <- TaskHandleError(*task)
+			undoneOutCh <- (*TaskUnknownError)(task)
 		}
 	}
 }
