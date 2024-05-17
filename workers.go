@@ -3,57 +3,65 @@ package main
 import (
 	"errors"
 	"fmt"
+	"math/rand"
+	"os"
 	"sync"
 	"time"
+
+	"sedonn/task-workers/workerpool"
 )
 
 const (
-	TaskCount         = 20
-	TaskChannelBuffer = 10
-	MaxTaskHandlers   = 4
-	MaxTaskSorters    = 4
+	TaskCount         uint = 10
+	TaskChannelBuffer uint = 10
+	MaxTaskHandlers   uint = 4
+	MaxTaskSorters    uint = 4
 )
 
+var ErrUnknown = errors.New("some error occurred")
+
 type Task struct {
-	id         int
-	createTime time.Time
-	finishTime time.Time
-	err        error
-	result     *TaskResult
+	id                     uint
+	done                   bool
+	createTime, finishTime time.Time
+	err                    error
 }
 
 func (t *Task) String() string {
-	return fmt.Sprintf("Task\nid: %v\ncreateTime: %s\nfinishTime: %s\ndone: %v\nmessage: %s\n",
-		t.id, t.createTime.Format(time.RFC3339), t.finishTime.Format(time.RFC3339Nano), t.result.done, t.result.message)
-}
-
-type TaskResult struct {
-	done    bool
-	message []byte
+	return fmt.Sprintf("Task\nid: %v\ncreated: %s\nfinished: %s\ndone: %v\n",
+		t.id,
+		t.createTime.Format(time.RFC3339Nano), t.finishTime.Format(time.RFC3339Nano),
+		t.done)
 }
 
 type TaskUnknownError Task
 
 func (e *TaskUnknownError) Error() string {
-	return fmt.Sprintf("Task unknown error!\nid: %v\nerror: %v\n", e.id, e.err)
+	return fmt.Sprintf("task id = %v unknown error: %v", e.id, e.err)
 }
 
 type TaskHandleError Task
 
 func (e *TaskHandleError) Error() string {
-	return fmt.Sprintf("Task process error!\nid: %d\ntime: %s\nerror %s\n", e.id, e.createTime.Format(time.RFC3339), e.err)
+	return fmt.Sprintf("task id = %v handle error", e.id)
 }
 
-func initTaskGenerator() <-chan *Task {
+func makeTasks() <-chan *Task {
 	tasksCh := make(chan *Task, TaskChannelBuffer)
 
 	go func() {
-		for count := 0; count < TaskCount; count++ {
+		for id := range TaskCount {
 			var err error
-			if time.Now().Nanosecond()%2 > 0 {
-				err = errors.New("Some error occurred")
+			// Condition for generating a tasks with error
+			if id%2 == 0 {
+				err = ErrUnknown
 			}
-			tasksCh <- &Task{id: int(time.Now().Unix()) + count, createTime: time.Now(), err: err}
+
+			tasksCh <- &Task{
+				id:         uint(time.Now().Unix()) + id,
+				createTime: time.Now(),
+				err:        err,
+			}
 		}
 		close(tasksCh)
 	}()
@@ -61,14 +69,13 @@ func initTaskGenerator() <-chan *Task {
 	return tasksCh
 }
 
-func handleTask(wg *sync.WaitGroup, inCh <-chan *Task, outCh chan<- *Task) {
-	defer wg.Done()
+func handleTask(inCh <-chan *Task, outCh chan<- *Task) {
+	rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
 
 	for task := range inCh {
-		if task.createTime.After(time.Now().Add(-20*time.Second)) || task.err != nil {
-			task.result = &TaskResult{true, []byte("Task has been completed!")}
-		} else {
-			task.result = &TaskResult{false, []byte("Something went wrong!")}
+		// Condition for the task successful completion
+		if rnd.Int()%2 != 0 && task.err == nil {
+			task.done = true
 		}
 		task.finishTime = time.Now()
 
@@ -78,59 +85,56 @@ func handleTask(wg *sync.WaitGroup, inCh <-chan *Task, outCh chan<- *Task) {
 	}
 }
 
-func sortTask(wg *sync.WaitGroup, inCh <-chan *Task, doneOutCh chan<- *Task, undoneOutCh chan<- error) {
-	defer wg.Done()
-
+func sortTask(inCh <-chan *Task, doneOutCh chan<- *Task, undoneOutCh chan<- error) {
 	for task := range inCh {
 		switch {
 		case task.err != nil:
 			undoneOutCh <- (*TaskUnknownError)(task)
-		case task.result.done:
+		case task.done:
 			doneOutCh <- task
-		case !task.result.done:
-			undoneOutCh <- (*TaskUnknownError)(task)
+		case !task.done:
+			undoneOutCh <- (*TaskHandleError)(task)
 		}
 	}
 }
 
 func main() {
-	tasksCh := initTaskGenerator()
-	processedTasksCh := make(chan *Task, TaskChannelBuffer)
+	tasksCh := makeTasks()
+	handledTasksCh := make(chan *Task, TaskChannelBuffer)
 	doneTasksCh := make(chan *Task, TaskChannelBuffer)
 	undoneTasksCh := make(chan error, TaskChannelBuffer)
 
-	taskHandlersWg := &sync.WaitGroup{}
-	taskSortersWg := &sync.WaitGroup{}
+	taskHandlers := workerpool.New(MaxTaskHandlers)
+	taskHandlers.SetWork(func() { handleTask(tasksCh, handledTasksCh) })
+	taskHandlers.SetFinishCallback(func() { close(handledTasksCh) })
 
-	go func() {
-		for workerCount := 0; workerCount < MaxTaskHandlers; workerCount++ {
-			taskHandlersWg.Add(1)
-			go handleTask(taskHandlersWg, tasksCh, processedTasksCh)
-		}
-		taskHandlersWg.Wait()
-		close(processedTasksCh)
-	}()
+	if err := taskHandlers.Run(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 
-	go func() {
-		for workerCount := 0; workerCount < MaxTaskSorters; workerCount++ {
-			taskSortersWg.Add(1)
-			go sortTask(taskSortersWg, processedTasksCh, doneTasksCh, undoneTasksCh)
-		}
-		taskSortersWg.Wait()
+	taskSorters := workerpool.New(MaxTaskSorters)
+	taskSorters.SetWork(func() { sortTask(handledTasksCh, doneTasksCh, undoneTasksCh) })
+	taskSorters.SetFinishCallback(func() {
 		close(doneTasksCh)
 		close(undoneTasksCh)
-	}()
+	})
 
-	doneTasks := map[int]*Task{}
-	undoneTasks := []error{}
+	if err := taskSorters.Run(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+
+	var doneTasks []*Task
+	var undoneTasks []error
 	taskReceiversWg := &sync.WaitGroup{}
 
 	taskReceiversWg.Add(1)
 	go func() {
 		defer taskReceiversWg.Done()
 
-		for task := range doneTasksCh {
-			doneTasks[task.id] = task
+		for t := range doneTasksCh {
+			doneTasks = append(doneTasks, t)
 		}
 	}()
 
