@@ -114,7 +114,7 @@ func main() {
 	var errorTasks []error
 	taskReceiversWg := &sync.WaitGroup{}
 
-	taskReceiversWg.Add(1)
+	taskReceiversWg.Add(2)
 	go func() {
 		defer taskReceiversWg.Done()
 
@@ -122,8 +122,6 @@ func main() {
 			doneTasks = append(doneTasks, t)
 		}
 	}()
-
-	taskReceiversWg.Add(1)
 	go func() {
 		defer taskReceiversWg.Done()
 
