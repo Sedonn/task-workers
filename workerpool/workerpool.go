@@ -1,11 +1,8 @@
 package workerpool
 
 import (
-	"errors"
 	"sync"
 )
-
-var ErrWorkEmpty = errors.New("worker pool function empty")
 
 // Worker is implemented by struct type that has a Do and OnFinish methods,
 // which defines the worker behavior.
