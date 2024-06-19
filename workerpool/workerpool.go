@@ -31,7 +31,7 @@ func New(w Worker, capacity int) *Pool {
 	}
 }
 
-// Run start worker in concurrent mode.
+// Run starts worker in concurrent mode.
 func (p *Pool) Run() {
 	go func() {
 		for range p.capacity {
