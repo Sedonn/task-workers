@@ -8,7 +8,7 @@ import (
 
 var ErrUnknown = errors.New("some error occurred")
 
-// A Task contains data about task.
+// The Task contains data about task.
 type Task struct {
 	ID                    int
 	Done                  bool
@@ -16,7 +16,7 @@ type Task struct {
 	Err                   error
 }
 
-// SetDone completes task with state which can be successful or not.
+// SetDone completes task with certain state and sets a finish time.
 func (t *Task) SetDone(done bool) {
 	t.Done = done
 	t.FinishedAt = time.Now()

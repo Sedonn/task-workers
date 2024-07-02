@@ -8,7 +8,7 @@ import (
 	"sedonn/task-workers/workerpool"
 )
 
-// A TaskHandler is worker which completes the tasks.
+// The TaskHandler is the worker that performs the tasks.
 type TaskHandler struct {
 	inCh  <-chan *task.Task
 	outCh chan *task.Task
@@ -26,10 +26,10 @@ func NewTaskHandler(inCh <-chan *task.Task) *TaskHandler {
 	}
 }
 
-// OutCh returns channel with results of task handling.
+// OutCh returns a channel with results of task handling.
 func (th *TaskHandler) OutCh() <-chan *task.Task { return th.outCh }
 
-// Do executes worker job in concurrent mode.
+// Do starts worker job.
 func (th *TaskHandler) Do() {
 	for task := range th.inCh {
 		// Condition for the task successful completion.

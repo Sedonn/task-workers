@@ -4,12 +4,11 @@ import (
 	"sync"
 )
 
-// Worker is implemented by struct type that has a Do and OnFinish methods,
-// which defines the worker behavior.
+// Worker describes the worker behavior.
 //
-// Do is the main work function which executes in concurrent mode.
+// Do is the main work function which executes in concurrent mode. Realization should be concurrent-safe.
 //
-// Finish is the callback method and executes when all of the workers end their work.
+// Finish is the callback-method and executes when all of the workers end their work.
 type Worker interface {
 	Do()
 	Finish()

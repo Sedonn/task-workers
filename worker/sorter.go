@@ -19,7 +19,7 @@ func (e *taskHandleError) Error() string {
 	return fmt.Sprintf("task id = %v handle error", e.ID)
 }
 
-// A TaskSorter is worker which sorts the tasks between channels.
+// The TaskSorter is the worker that sorts a tasks between channels.
 type TaskSorter struct {
 	inCh    <-chan *task.Task
 	outCh   chan *task.Task
@@ -43,7 +43,7 @@ func (ts *TaskSorter) OutCh() <-chan *task.Task { return ts.outCh }
 // ErrorCh returns channel of tasks with errors.
 func (ts *TaskSorter) ErrorCh() <-chan error { return ts.errorCh }
 
-// Do executes worker job in concurrent mode.
+// Do starts worker job.
 func (ts *TaskSorter) Do() {
 	for task := range ts.inCh {
 		switch {
